@@ -1,7 +1,6 @@
 import csv
 import io
 import re
-import zipfile
 
 import openpyxl
 import pandas as pd
@@ -143,54 +142,6 @@ st.divider()
 st.header("3. Eksekusi & Pemrosesan")
 
 
-def sanitize_excel_buffer(file_obj):
-    """
-    Membersihkan tag XML internal Excel (.xlsx) yang korup/rusak seperti r="NaN"
-    sebelum dibaca oleh openpyxl/pandas agar terhindar dari error integer conversion.
-    """
-    try:
-        if file_obj is None:
-            return file_obj
-
-        file_bytes = file_obj.read()
-        file_obj.seek(0)
-
-        if not zipfile.is_zipfile(io.BytesIO(file_bytes)):
-            file_obj.seek(0)
-            return file_obj
-
-        in_zip = zipfile.ZipFile(io.BytesIO(file_bytes))
-        out_buffer = io.BytesIO()
-
-        with zipfile.ZipFile(
-            out_buffer, "w", zipfile.ZIP_DEFLATED
-        ) as out_zip:
-            for item in in_zip.infolist():
-                content = in_zip.read(item.filename)
-                if item.filename.startswith(
-                    "xl/worksheets/"
-                ) and item.filename.endswith(".xml"):
-                    text = content.decode("utf-8", errors="ignore")
-                    text = re.sub(
-                        r'\s+r="[^"]*NaN[^"]*"',
-                        "",
-                        text,
-                        flags=re.IGNORECASE,
-                    )
-                    text = re.sub(
-                        r'\s+r=["\']NaN["\']', "", text, flags=re.IGNORECASE
-                    )
-                    text = re.sub(r'\s+r=NaN', "", text, flags=re.IGNORECASE)
-                    content = text.encode("utf-8")
-                out_zip.writestr(item, content)
-
-        out_buffer.seek(0)
-        return out_buffer
-    except Exception:
-        file_obj.seek(0)
-        return file_obj
-
-
 def normalize_batch(val):
     """
     Fungsi Normalisasi Agresif & Kebal Tipe Data:
@@ -204,9 +155,11 @@ def normalize_batch(val):
 
     val_str = str(val).strip()
 
+    # Potong desimal .0 di akhir jika ada
     if val_str.endswith(".0"):
         val_str = val_str[:-2]
 
+    # Hapus seluruh whitespace & karakter khusus tersembunyi
     val_str = re.sub(r"\s+", "", val_str).upper()
 
     return val_str
@@ -219,12 +172,10 @@ def load_raw_inventory_data(uploaded_file_obj):
 
     if fname.endswith(".xlsx") or fname.endswith(".xls"):
         try:
-            cleaned_buf = sanitize_excel_buffer(uploaded_file_obj)
-            df = pd.read_excel(cleaned_buf)
+            df = pd.read_excel(uploaded_file_obj)
             if df.shape[1] <= 2:
                 uploaded_file_obj.seek(0)
-                cleaned_buf = sanitize_excel_buffer(uploaded_file_obj)
-                df_temp = pd.read_excel(cleaned_buf)
+                df_temp = pd.read_excel(uploaded_file_obj)
                 non_null_series = df_temp.dropna(how="all").iloc[:, 0].astype(
                     str
                 )
@@ -237,8 +188,7 @@ def load_raw_inventory_data(uploaded_file_obj):
                 )
         except Exception:
             uploaded_file_obj.seek(0)
-            cleaned_buf = sanitize_excel_buffer(uploaded_file_obj)
-            df = pd.read_excel(cleaned_buf)
+            df = pd.read_excel(uploaded_file_obj)
     else:
         try:
             df = pd.read_csv(uploaded_file_obj, sep=";", on_bad_lines="skip")
@@ -279,10 +229,8 @@ def load_raw_inventory_data(uploaded_file_obj):
 
 def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
     """
-    Mengekstrak Batch MISSING dengan pemotongan mutlak:
-    - Membuang baris pertama.
-    - Membuang kolom pertama (Kolom A).
-    - Memotong dari kolom O sampai ujung kanan (hanya mengambil Kolom B sampai N).
+    Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi
+    yang terdaftar pada Form Dinamis Sheet Summary.
     """
     if not missing_file_obj:
         return set()
@@ -297,32 +245,13 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 sep=None,
                 engine="python",
                 on_bad_lines="skip",
-                header=None,
             )
-            if df_missing.shape[0] > 1 and df_missing.shape[1] > 1:
-                df_missing = df_missing.iloc[1:, 1:14]
-                df_missing.columns = [
-                    str(c).strip().upper() for c in df_missing.iloc[0].values
-                ]
-                df_missing = df_missing.drop(df_missing.index[0]).reset_index(
-                    drop=True
-                )
             df_list = [df_missing]
         else:
-            cleaned_file_buffer = sanitize_excel_buffer(missing_file_obj)
-            xls = pd.ExcelFile(cleaned_file_buffer)
-            df_list = []
-            for s in xls.sheet_names:
-                df_sheet = pd.read_excel(xls, sheet_name=s, header=None)
-                if df_sheet.shape[0] > 1 and df_sheet.shape[1] > 1:
-                    df_sheet = df_sheet.iloc[1:, 1:14]
-                    df_sheet.columns = [
-                        str(c).strip().upper() for c in df_sheet.iloc[0].values
-                    ]
-                    df_sheet = df_sheet.drop(df_sheet.index[0]).reset_index(
-                        drop=True
-                    )
-                df_list.append(df_sheet)
+            xls = pd.ExcelFile(missing_file_obj)
+            df_list = [
+                pd.read_excel(xls, sheet_name=s) for s in xls.sheet_names
+            ]
 
         valid_locations = []
         if target_loc_list:
@@ -332,15 +261,6 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 if str(loc).strip() != ""
             ]
 
-        # Bangun pola Regex dinamis untuk lokasi
-        loc_pattern = None
-        if valid_locations:
-            loc_pattern = (
-                r"(?i)\b("
-                + "|".join([re.escape(loc) for loc in valid_locations])
-                + r")\b"
-            )
-
         for df_sheet in df_list:
             if df_sheet.empty:
                 continue
@@ -349,20 +269,17 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 str(c).strip().upper() for c in df_sheet.columns
             ]
 
-            # Filtering Lokasi menggunakan Regex
-            if loc_pattern and "LOCATION" in df_sheet.columns:
-
-                def is_matching_loc(val):
-                    if (
-                        pd.isna(val)
-                        or val is None
-                        or str(val).strip().lower() == "nan"
-                    ):
-                        return False
-                    return bool(re.search(loc_pattern, str(val)))
-
+            # Filter lokasi spesifik
+            if valid_locations and "LOCATION" in df_sheet.columns:
+                loc_pattern = "|".join(
+                    [rf"\b{re.escape(loc)}\b" for loc in valid_locations]
+                )
                 df_sheet = df_sheet[
-                    df_sheet["LOCATION"].apply(is_matching_loc)
+                    df_sheet["LOCATION"]
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                    .str.contains(loc_pattern, regex=True, na=False)
                 ]
 
             batch_cols = [
@@ -415,13 +332,13 @@ def set_cell_safe(ws, row, col, value):
 
 def build_prev_so_dict(prev_so_file_obj):
     """Pindai secara otomatis baris header & ekstraksi VLOOKUP Prev SO & Status secara presisi."""
-    cleaned_buf = sanitize_excel_buffer(prev_so_file_obj)
     try:
-        df_raw = pd.read_excel(cleaned_buf, sheet_name="Worksheet", header=None)
+        df_raw = pd.read_excel(
+            prev_so_file_obj, sheet_name="Worksheet", header=None
+        )
     except Exception:
         prev_so_file_obj.seek(0)
-        cleaned_buf = sanitize_excel_buffer(prev_so_file_obj)
-        df_raw = pd.read_excel(cleaned_buf, header=None)
+        df_raw = pd.read_excel(prev_so_file_obj, header=None)
 
     header_idx = None
     for idx, r in df_raw.iterrows():
@@ -435,15 +352,13 @@ def build_prev_so_dict(prev_so_file_obj):
     prev_dict = {}
     if header_idx is not None:
         prev_so_file_obj.seek(0)
-        cleaned_buf = sanitize_excel_buffer(prev_so_file_obj)
         try:
             df_prev = pd.read_excel(
-                cleaned_buf, sheet_name="Worksheet", header=header_idx
+                prev_so_file_obj, sheet_name="Worksheet", header=header_idx
             )
         except Exception:
             prev_so_file_obj.seek(0)
-            cleaned_buf = sanitize_excel_buffer(prev_so_file_obj)
-            df_prev = pd.read_excel(cleaned_buf, header=header_idx)
+            df_prev = pd.read_excel(prev_so_file_obj, header=header_idx)
 
         df_prev.columns = [str(c).strip().upper() for c in df_prev.columns]
 
