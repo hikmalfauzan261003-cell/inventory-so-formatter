@@ -630,9 +630,9 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             # -----------------------------------------------------
             if "Worksheet" in wb.sheetnames:
                 ws = wb["Worksheet"]
-                set_cell_safe(ws, 3, 3, f": {station_input}")
-                set_cell_safe(ws, 4, 3, f": {location_input}")
-                set_cell_safe(ws, 5, 3, f": {periode_input}")
+                set_cell_safe(ws, 3, 3, f" {station_input}")
+                set_cell_safe(ws, 4, 3, f" {location_input}")
+                set_cell_safe(ws, 5, 3, f" {periode_input}")
                 write_so_table_to_sheet(ws, df_worksheet, prev_so_map)
 
             # -----------------------------------------------------
