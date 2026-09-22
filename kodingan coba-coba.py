@@ -12,11 +12,11 @@ st.set_page_config(
 )
 col4, col5, col6 = st.columns ([1, 2, 1])
 with col4:
-    st.image("member.jpeg", width = 80)
+    st.image("member.jpeg", width = 200)
 with col5:
     st.title("📊 Stock Opname Worksuki Generator")
 with col6:
-    st.image("member.jpeg", width = 80)
+    st.image("member.jpeg", width = 200)
 st.write(
     "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga makanya saya bikin ini."
 )
