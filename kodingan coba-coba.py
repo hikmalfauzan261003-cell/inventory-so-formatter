@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="Stock Opname Khusus SUki", page_icon="📊", layout="wide"
 )
 
-st.title("📊 Stock Opname Worksheet Generator")
+st.title("📊 Stock Opname Worksuki Generator")
 st.write(
     "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga Makanya saya bikin ini ya."
 )
