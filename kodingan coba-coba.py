@@ -8,13 +8,13 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Stock Opname Khusus SUki", page_icon="📊", layout="wide"
+    page_title="Stock Opname Khusus SUki", page_icon="member.jpeg", layout="wide"
 )
 col4, col5, col6 = st.columns ([1, 2, 1])
 with col4:
     st.image("member.jpeg", width = 200)
 with col5:
-    st.title("📊 Stock Opname Worksuki Generator")
+    st.title("Stock Opname Worksuki Generator")
 with col6:
     st.image("member.jpeg", width = 200)
 st.write(
@@ -40,29 +40,29 @@ def fetch_master_template():
 # ---------------------------------------------------------
 # STEP 1: UPLOAD DOKUMEN
 # ---------------------------------------------------------
-st.header("1. Upload Dokumen")
+st.header("1. Aplot Doksli Dulu Lohya 😹")
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
     csv_file = st.file_uploader(
-        "Upload Data Mentah Inventory (.csv / .xlsx)",
+        "Upload Doksli Batmis 😹 (.csv / .xlsx)",
         type=["csv", "xlsx", "xls"],
-        help="Report inventory baru (bisa format CSV atau Excel).",
+        help="Upload file dari batmis (bisa format CSV atau Excel).",
     )
 
 with col2:
     prev_so_file = st.file_uploader(
-        "Upload Dokumen Prev SO Referensi (.xlsx)",
+        "Upload Dokumen Prev SO 🟣🟣🟣 (.xlsx)",
         type=["xlsx"],
-        help="File SO periode sebelumnya untuk VLOOKUP Batch -> Prev SO & Prev Status.",
+        help="Note : Worksheet utama harus direname jadi 'Worksheet' (W besar sisanya kecil)",
     )
 
 with col3:
     missing_file = st.file_uploader(
-        "Upload Dokumen Barang Missing (.xlsx / .csv)",
+        "Upload Doksli Missing (.xlsx / .csv)",
         type=["xlsx", "xls", "csv"],
-        help="Opsional: File daftar barang MISSING untuk auto-filter & hapus baris dari hasil download.",
+        help="Note : Delete kolom paling atas & kiri, delete kolom O sampe ujung kanan.",
     )
 
 st.divider()
@@ -89,7 +89,7 @@ if "summary_rows" not in st.session_state:
     st.session_state.summary_rows = [
         {
             "division": "LINE MAINTENANCE",
-            "pic": "THOMAS",
+            "pic": "Bahlil",
             "loc_code": "K86",
             "loc_desc": "STORE SUB",
         }
@@ -562,9 +562,9 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
 
 if st.button("🚀 Process & Generate Template", type="primary"):
     if not csv_file or not prev_so_file:
-        st.error("⚠️ Harap upload Data Mentah Inventory & Prev SO Referensi!")
+        st.error("Dokslinya diperhatikan lagi lohya 💀")
     else:
-        with st.spinner("Mengunduh master template Drive & memproses data..."):
+        with st.spinner("Suki tidur besok SO lagi sama member 😹"):
             try:
                 template_bytes = fetch_master_template()
                 wb = openpyxl.load_workbook(template_bytes)
@@ -668,10 +668,10 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             wb.save(output_buffer)
             output_buffer.seek(0)
 
-            st.success("✅ Otomasi laporan berhasil diproses dengan presisi!")
+            st.success("Worksheet Berhasil Dihitamkan 😹")
             if deleted_missing_count > 0:
                 st.info(
-                    f"🗑️ Sebanyak **{deleted_missing_count}** baris barang berstatus **MISSING** telah berhasil di-VLOOKUP dan dihapus secara otomatis dari hasil download."
+                    f"🗑️ Sebanyak **{deleted_missing_count}** baris barang berstatus **MISSING** terdampak Ragnamok 😹🙏"
                 )
 
             st.download_button(
