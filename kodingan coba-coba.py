@@ -153,7 +153,6 @@ def sanitize_excel_buffer(file_obj):
         file_bytes = file_obj.read()
         file_obj.seek(0)
 
-        # Cek apakah file berupa ZIP (struktur file XLSX)
         if not zipfile.is_zipfile(io.BytesIO(file_bytes)):
             file_obj.seek(0)
             return file_obj
@@ -166,12 +165,10 @@ def sanitize_excel_buffer(file_obj):
         ) as out_zip:
             for item in in_zip.infolist():
                 content = in_zip.read(item.filename)
-                # Bersihkan XML worksheet yang korup
                 if item.filename.startswith(
                     "xl/worksheets/"
                 ) and item.filename.endswith(".xml"):
                     text = content.decode("utf-8", errors="ignore")
-                    # Hapus atribut r="NaN" atau r="nan" pada tag baris
                     text = re.sub(r'\s+r="NaN"', "", text, flags=re.IGNORECASE)
                     content = text.encode("utf-8")
                 out_zip.writestr(item, content)
@@ -196,11 +193,9 @@ def normalize_batch(val):
 
     val_str = str(val).strip()
 
-    # Potong desimal .0 di akhir jika ada
     if val_str.endswith(".0"):
         val_str = val_str[:-2]
 
-    # Hapus seluruh whitespace & karakter khusus tersembunyi
     val_str = re.sub(r"\s+", "", val_str).upper()
 
     return val_str
@@ -273,9 +268,9 @@ def load_raw_inventory_data(uploaded_file_obj):
 
 def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
     """
-    Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi
-    yang terdaftar pada Form Dinamis Sheet Summary.
-    Disterilkan dari error XML korup <row r="NaN">.
+    Mengekstrak Batch MISSING dengan auto-deteksi format cerdas:
+    - Jika file mentah TRAX: otomatis buang baris 1, buang kolom A, ambil sampai kolom N (s.d 13 kolom berikutnya).
+    - Jika file sudah terlanjur dipotong: dibaca langsung secara aman tanpa potong ulang.
     """
     if not missing_file_obj:
         return set()
@@ -295,9 +290,34 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
         else:
             cleaned_file_buffer = sanitize_excel_buffer(missing_file_obj)
             xls = pd.ExcelFile(cleaned_file_buffer)
-            df_list = [
-                pd.read_excel(xls, sheet_name=s) for s in xls.sheet_names
-            ]
+            df_list = []
+            for s in xls.sheet_names:
+                df_sheet = pd.read_excel(xls, sheet_name=s, header=None)
+
+                # --- AUTO-DETEKSI FORMAT MENTAH VS SUDAH DIPOTONG ---
+                cols_str = [str(c).upper() for c in df_sheet.iloc[0].values]
+                is_raw_trax = any(
+                    "TRANSACTION" in c or "TRANS" in c for c in cols_str
+                ) or df_sheet.shape[1] > 14
+
+                if is_raw_trax:
+                    # Buang baris 1 & kolom A (indeks 0), ambil s.d 13 kolom berikutnya (B s.d N)
+                    df_sheet = df_sheet.iloc[1:, 1:14]
+                    df_sheet.columns = [
+                        str(c).strip().upper() for c in df_sheet.iloc[0].values
+                    ]
+                    df_sheet = df_sheet.drop(df_sheet.index[0]).reset_index(
+                        drop=True
+                    )
+                else:
+                    df_sheet.columns = [
+                        str(c).strip().upper() for c in df_sheet.iloc[0].values
+                    ]
+                    df_sheet = df_sheet.drop(df_sheet.index[0]).reset_index(
+                        drop=True
+                    )
+
+                df_list.append(df_sheet)
 
         valid_locations = []
         if target_loc_list:
@@ -307,7 +327,7 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 if str(loc).strip() != ""
             ]
 
-        # Bangun pola Regex dinamis
+        # Bangun pola Regex dinamis untuk lokasi
         loc_pattern = None
         if valid_locations:
             loc_pattern = (
