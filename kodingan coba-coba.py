@@ -13,9 +13,7 @@ st.set_page_config(
 
 st.title("📊 Stock Opname Worksheet Generator")
 st.write(
-    "Halo Para Suki dan Member,
-    Anda malas bikin worksheet? Sama saya juga
-    Makanya saya bikin ini ya."
+    "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga Makanya saya bikin ini ya."
 )
 
 st.divider()
