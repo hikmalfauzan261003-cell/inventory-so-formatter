@@ -4,6 +4,7 @@ import re
 
 import openpyxl
 import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(
@@ -18,34 +19,41 @@ st.write(
 st.divider()
 
 # ---------------------------------------------------------
+# DIRECT LINK TEMPLATE MASTER GOOGLE DRIVE
+# ---------------------------------------------------------
+TEMPLATE_DRIVE_URL = "https://drive.google.com/uc?export=download&id=16a4z69o0IGjmOZb_sP3HDG2m2WQnYxJI"
+
+
+@st.cache_data
+def fetch_master_template():
+    """Mengunduh template master dari Google Drive dan menyimpannya di cache Streamlit."""
+    response = requests.get(TEMPLATE_DRIVE_URL)
+    response.raise_for_status()
+    return io.BytesIO(response.content)
+
+
+# ---------------------------------------------------------
 # STEP 1: UPLOAD DOKUMEN
 # ---------------------------------------------------------
 st.header("1. Upload Dokumen")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    template_file = st.file_uploader(
-        "Upload Template Master (.xlsx)",
-        type=["xlsx"],
-        help="Template SO download di : https://intip.in/TemplateSO",
-    )
-
-with col2:
     csv_file = st.file_uploader(
         "Upload Data Mentah Inventory (.csv / .xlsx)",
         type=["csv", "xlsx", "xls"],
         help="Report inventory baru (bisa format CSV atau Excel).",
     )
 
-with col3:
+with col2:
     prev_so_file = st.file_uploader(
         "Upload Dokumen Prev SO Referensi (.xlsx)",
         type=["xlsx"],
         help="File SO periode sebelumnya untuk VLOOKUP Batch -> Prev SO & Prev Status.",
     )
 
-with col4:
+with col3:
     missing_file = st.file_uploader(
         "Upload Dokumen Barang Missing (.xlsx / .csv)",
         type=["xlsx", "xls", "csv"],
@@ -240,13 +248,11 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
             )
             df_list = [df_missing]
         else:
-            # Membaca SELURUH sheet pada file Excel
             xls = pd.ExcelFile(missing_file_obj)
             df_list = [
                 pd.read_excel(xls, sheet_name=s) for s in xls.sheet_names
             ]
 
-        # Bersihkan & Ambil daftar lokasi unik dari Form Dinamis Summary
         valid_locations = []
         if target_loc_list:
             valid_locations = [
@@ -263,7 +269,7 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 str(c).strip().upper() for c in df_sheet.columns
             ]
 
-            # Filter berdasarkan LOKASI yang diinput di Summary (Exact Word Match)
+            # Filter lokasi spesifik
             if valid_locations and "LOCATION" in df_sheet.columns:
                 loc_pattern = "|".join(
                     [rf"\b{re.escape(loc)}\b" for loc in valid_locations]
@@ -276,7 +282,6 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                     .str.contains(loc_pattern, regex=True, na=False)
                 ]
 
-            # Cari kolom yang berisi nama 'BATCH', 'GRB', 'LOT', dll
             batch_cols = [
                 c
                 for c in df_sheet.columns
@@ -326,7 +331,7 @@ def set_cell_safe(ws, row, col, value):
 
 
 def build_prev_so_dict(prev_so_file_obj):
-    """Pindai secara otomatis baris header & ekstraksi VLOOKUP Prev SO + Status secara presisi."""
+    """Pindai secara otomatis baris header & ekstraksi VLOOKUP Prev SO & Status secara presisi."""
     try:
         df_raw = pd.read_excel(
             prev_so_file_obj, sheet_name="Worksheet", header=None
@@ -380,7 +385,7 @@ def build_prev_so_dict(prev_so_file_obj):
 
 
 def write_so_table_to_sheet(ws, df_data, prev_so_map):
-    """Fungsi helper untuk mengisi data ke sheet (Worksheet atau NLA) dari baris 8 ke bawah."""
+    """Mengisi data ke sheet dari baris 8 ke bawah."""
     max_r = ws.max_row
     if max_r >= 8:
         ws.delete_rows(8, amount=max_r - 7 + 1)
@@ -551,18 +556,28 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
 
 
 if st.button("🚀 Process & Generate Template", type="primary"):
-    if not template_file or not csv_file or not prev_so_file:
-        st.error("⚠️ Harap upload KETIGA dokumen utama terlebih dahulu!")
+    if not csv_file or not prev_so_file:
+        st.error("⚠️ Harap upload Data Mentah Inventory & Prev SO Referensi!")
     else:
-        with st.spinner("Sedang memproses data dan merapikan Excel..."):
-            wb = openpyxl.load_workbook(template_file)
+        with st.spinner("Mengunduh master template Drive & memproses data..."):
+            try:
+                template_bytes = fetch_master_template()
+                wb = openpyxl.load_workbook(template_bytes)
+            except Exception as e:
+                st.error(
+                    f"❌ Gagal mengambil Template Master dari Google Drive: {e}"
+                )
+                st.stop()
+
             df_raw = load_raw_inventory_data(csv_file)
             prev_so_map = build_prev_so_dict(prev_so_file)
 
-            # Ekstraksi daftar LOC Code langsung dari Form Dinamis Summary
-            active_summary_locs = [sdata["loc_code"] for sdata in summary_data_inputs]
+            # Ekstraksi LOC Code aktif dari Summary
+            active_summary_locs = [
+                sdata["loc_code"] for sdata in summary_data_inputs
+            ]
 
-            # Ekstraksi Batch Missing khusus lokasi yang terdaftar di Summary
+            # Filter Batch Missing
             missing_batch_set = extract_missing_batch_set(
                 missing_file, target_loc_list=active_summary_locs
             )
@@ -572,9 +587,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
                 if sname in wb.sheetnames:
                     del wb[sname]
 
-            # -----------------------------------------------------
-            # FILTER HAPUS BARANG STATUS MISSING
-            # -----------------------------------------------------
+            # Filter Hapus Baris Missing
             initial_count = len(df_raw)
             if missing_batch_set:
 
@@ -591,9 +604,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
 
             deleted_missing_count = initial_count - len(df_raw)
 
-            # -----------------------------------------------------
-            # FILTER DATA NLA VS REGULAR (WORKSHEET)
-            # -----------------------------------------------------
+            # Filter NLA vs Regular
             nla_condition = pd.Series([False] * len(df_raw))
             for col_check in [
                 "STATUS",
@@ -632,7 +643,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
                 set_cell_safe(ws_sum, 3, 4, f": {station_input}")  # D3: Station
                 set_cell_safe(ws_sum, 4, 4, f": {periode_input}")  # D4: Periode
 
-                start_sum_row = 11  # Data Summary dimulai di baris 11
+                start_sum_row = 11
                 for i, sdata in enumerate(summary_data_inputs):
                     r_curr = start_sum_row + i
                     set_cell_safe(ws_sum, r_curr, 2, i + 1)  # B: NO
@@ -652,7 +663,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             wb.save(output_buffer)
             output_buffer.seek(0)
 
-            st.success("✅ Otomasi laporan berhasil diproses!")
+            st.success("✅ Otomasi laporan berhasil diproses dengan presisi!")
             if deleted_missing_count > 0:
                 st.info(
                     f"🗑️ Sebanyak **{deleted_missing_count}** baris barang berstatus **MISSING** telah berhasil di-VLOOKUP dan dihapus secara otomatis dari hasil download."
