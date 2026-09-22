@@ -139,7 +139,7 @@ def normalize_batch(val):
     Fungsi Normalisasi Agresif & Kebal Tipe Data:
     - Mengonversi integer, float, string menjadi String murni.
     - Menghapus .0 di akhir angka float (misal: 4559080.0 -> 4559080).
-    - Menghapus SEMUA jenis spasi, newline (\\n), tab (\\t), dan karakter invisible (\\xa0).
+    - Menghapus SEMUA jenis spasi, newline (\n), tab (\t), dan karakter invisible (\xa0).
     - Mengubah semua huruf menjadi UPPERCASE.
     """
     if pd.isna(val) or val is None:
@@ -219,8 +219,11 @@ def load_raw_inventory_data(uploaded_file_obj):
     return df
 
 
-def extract_missing_batch_set(missing_file_obj):
-    """Mengekstrak SELURUH Batch dari SEMUA SHEET pada file Missing secara presisi & kebal tipe data."""
+def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
+    """
+    Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi
+    yang terdaftar pada Form Dinamis Sheet Summary.
+    """
     if not missing_file_obj:
         return set()
 
@@ -243,6 +246,15 @@ def extract_missing_batch_set(missing_file_obj):
                 pd.read_excel(xls, sheet_name=s) for s in xls.sheet_names
             ]
 
+        # Bersihkan & Ambil daftar lokasi unik dari Form Dinamis Summary
+        valid_locations = []
+        if target_loc_list:
+            valid_locations = [
+                str(loc).strip().upper()
+                for loc in target_loc_list
+                if str(loc).strip() != ""
+            ]
+
         for df_sheet in df_list:
             if df_sheet.empty:
                 continue
@@ -251,16 +263,31 @@ def extract_missing_batch_set(missing_file_obj):
                 str(c).strip().upper() for c in df_sheet.columns
             ]
 
+            # Filter berdasarkan LOKASI yang diinput di Summary (Exact Word Match)
+            if valid_locations and "LOCATION" in df_sheet.columns:
+                loc_pattern = "|".join(
+                    [rf"\b{re.escape(loc)}\b" for loc in valid_locations]
+                )
+                df_sheet = df_sheet[
+                    df_sheet["LOCATION"]
+                    .astype(str)
+                    .str.strip()
+                    .str.upper()
+                    .str.contains(loc_pattern, regex=True, na=False)
+                ]
+
             # Cari kolom yang berisi nama 'BATCH', 'GRB', 'LOT', dll
             batch_cols = [
                 c
                 for c in df_sheet.columns
-                if any(k in c for k in ["BATCH", "GRB", "BARANG", "LOT"])
+                if any(
+                    k == c or f" {k}" in f" {c}"
+                    for k in ["BATCH", "GRB", "BATCH NO", "BATCH_NO"]
+                )
             ]
 
-            # Jika nama kolom khusus tidak ditemukan, panggil seluruh kolom
-            if not batch_cols:
-                batch_cols = list(df_sheet.columns)
+            if not batch_cols and len(df_sheet.columns) > 0:
+                batch_cols = [df_sheet.columns[0]]
 
             for col in batch_cols:
                 for val in df_sheet[col].dropna():
@@ -531,7 +558,14 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             wb = openpyxl.load_workbook(template_file)
             df_raw = load_raw_inventory_data(csv_file)
             prev_so_map = build_prev_so_dict(prev_so_file)
-            missing_batch_set = extract_missing_batch_set(missing_file)
+
+            # Ekstraksi daftar LOC Code langsung dari Form Dinamis Summary
+            active_summary_locs = [sdata["loc_code"] for sdata in summary_data_inputs]
+
+            # Ekstraksi Batch Missing khusus lokasi yang terdaftar di Summary
+            missing_batch_set = extract_missing_batch_set(
+                missing_file, target_loc_list=active_summary_locs
+            )
 
             # Hapus Sheet1 & Sheet2 jika ada
             for sname in ["Sheet1", "Sheet2", "sheet1", "sheet2"]:
