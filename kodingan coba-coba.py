@@ -231,6 +231,7 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
     """
     Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi
     yang terdaftar pada Form Dinamis Sheet Summary.
+    (SOLUSI 1: MENGGUNAKAN PENALARAN REGEX POLA DINAMIS KEBAL FORMAT LOKASI)
     """
     if not missing_file_obj:
         return set()
@@ -253,6 +254,7 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 pd.read_excel(xls, sheet_name=s) for s in xls.sheet_names
             ]
 
+        # Buat daftar lokasi target
         valid_locations = []
         if target_loc_list:
             valid_locations = [
@@ -260,6 +262,11 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 for loc in target_loc_list
                 if str(loc).strip() != ""
             ]
+
+        # Bangun pola Regex dinamis (Solusi 1)
+        loc_pattern = None
+        if valid_locations:
+            loc_pattern = r"(?i)\b(" + "|".join([re.escape(loc) for loc in valid_locations]) + r")\b"
 
         for df_sheet in df_list:
             if df_sheet.empty:
@@ -269,18 +276,14 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 str(c).strip().upper() for c in df_sheet.columns
             ]
 
-            # Filter lokasi spesifik
-            if valid_locations and "LOCATION" in df_sheet.columns:
-                loc_pattern = "|".join(
-                    [rf"\b{re.escape(loc)}\b" for loc in valid_locations]
-                )
-                df_sheet = df_sheet[
-                    df_sheet["LOCATION"]
-                    .astype(str)
-                    .str.strip()
-                    .str.upper()
-                    .str.contains(loc_pattern, regex=True, na=False)
-                ]
+            # Filtering Lokasi menggunakan Regex Solusi 1
+            if loc_pattern and "LOCATION" in df_sheet.columns:
+                def is_matching_loc(val):
+                    if pd.isna(val) or val is None:
+                        return False
+                    return bool(re.search(loc_pattern, str(val)))
+
+                df_sheet = df_sheet[df_sheet["LOCATION"].apply(is_matching_loc)]
 
             batch_cols = [
                 c
