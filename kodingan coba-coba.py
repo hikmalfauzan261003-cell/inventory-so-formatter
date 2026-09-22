@@ -146,10 +146,12 @@ st.header("3. Eksekusi & Pemrosesan")
 def sanitize_excel_buffer(file_obj):
     """
     Membersihkan tag XML internal Excel (.xlsx) yang korup/rusak seperti r="NaN"
-    sebelum dibaca oleh openpyxl/pandas agar tidak memicu error:
-    invalid literal for int() with base 10: 'NaN'
+    sebelum dibaca oleh openpyxl/pandas agar terhindar dari error integer conversion.
     """
     try:
+        if file_obj is None:
+            return file_obj
+
         file_bytes = file_obj.read()
         file_obj.seek(0)
 
@@ -169,7 +171,16 @@ def sanitize_excel_buffer(file_obj):
                     "xl/worksheets/"
                 ) and item.filename.endswith(".xml"):
                     text = content.decode("utf-8", errors="ignore")
-                    text = re.sub(r'\s+r="NaN"', "", text, flags=re.IGNORECASE)
+                    text = re.sub(
+                        r'\s+r="[^"]*NaN[^"]*"',
+                        "",
+                        text,
+                        flags=re.IGNORECASE,
+                    )
+                    text = re.sub(
+                        r'\s+r=["\']NaN["\']', "", text, flags=re.IGNORECASE
+                    )
+                    text = re.sub(r'\s+r=NaN', "", text, flags=re.IGNORECASE)
                     content = text.encode("utf-8")
                 out_zip.writestr(item, content)
 
@@ -268,9 +279,10 @@ def load_raw_inventory_data(uploaded_file_obj):
 
 def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
     """
-    Mengekstrak Batch MISSING dengan auto-deteksi format cerdas:
-    - Jika file mentah TRAX: otomatis buang baris 1, buang kolom A, ambil sampai kolom N (s.d 13 kolom berikutnya).
-    - Jika file sudah terlanjur dipotong: dibaca langsung secara aman tanpa potong ulang.
+    Mengekstrak Batch MISSING dengan pemotongan mutlak:
+    - Membuang baris pertama.
+    - Membuang kolom pertama (Kolom A).
+    - Memotong dari kolom O sampai ujung kanan (hanya mengambil Kolom B sampai N).
     """
     if not missing_file_obj:
         return set()
@@ -285,7 +297,16 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 sep=None,
                 engine="python",
                 on_bad_lines="skip",
+                header=None,
             )
+            if df_missing.shape[0] > 1 and df_missing.shape[1] > 1:
+                df_missing = df_missing.iloc[1:, 1:14]
+                df_missing.columns = [
+                    str(c).strip().upper() for c in df_missing.iloc[0].values
+                ]
+                df_missing = df_missing.drop(df_missing.index[0]).reset_index(
+                    drop=True
+                )
             df_list = [df_missing]
         else:
             cleaned_file_buffer = sanitize_excel_buffer(missing_file_obj)
@@ -293,15 +314,7 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
             df_list = []
             for s in xls.sheet_names:
                 df_sheet = pd.read_excel(xls, sheet_name=s, header=None)
-
-                # --- AUTO-DETEKSI FORMAT MENTAH VS SUDAH DIPOTONG ---
-                cols_str = [str(c).upper() for c in df_sheet.iloc[0].values]
-                is_raw_trax = any(
-                    "TRANSACTION" in c or "TRANS" in c for c in cols_str
-                ) or df_sheet.shape[1] > 14
-
-                if is_raw_trax:
-                    # Buang baris 1 & kolom A (indeks 0), ambil s.d 13 kolom berikutnya (B s.d N)
+                if df_sheet.shape[0] > 1 and df_sheet.shape[1] > 1:
                     df_sheet = df_sheet.iloc[1:, 1:14]
                     df_sheet.columns = [
                         str(c).strip().upper() for c in df_sheet.iloc[0].values
@@ -309,14 +322,6 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                     df_sheet = df_sheet.drop(df_sheet.index[0]).reset_index(
                         drop=True
                     )
-                else:
-                    df_sheet.columns = [
-                        str(c).strip().upper() for c in df_sheet.iloc[0].values
-                    ]
-                    df_sheet = df_sheet.drop(df_sheet.index[0]).reset_index(
-                        drop=True
-                    )
-
                 df_list.append(df_sheet)
 
         valid_locations = []
