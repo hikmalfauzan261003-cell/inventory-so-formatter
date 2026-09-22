@@ -8,12 +8,14 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Stock Opname Worksheet Generator", page_icon="📊", layout="wide"
+    page_title="Stock Opname Khusus SUki", page_icon="📊", layout="wide"
 )
 
 st.title("📊 Stock Opname Worksheet Generator")
 st.write(
-    "Aplikasi pemroses & otomatisasi laporan Excel Stock Opname secara presisi."
+    "Halo Para Suki dan Member,
+    Anda malas bikin worksheet? Sama saya juga
+    Makanya saya bikin ini ya."
 )
 
 st.divider()
