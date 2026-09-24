@@ -26,7 +26,7 @@ st.divider()
 # ---------------------------------------------------------
 # DIRECT LINK TEMPLATE MASTER GOOGLE DRIVE
 # ---------------------------------------------------------
-TEMPLATE_DRIVE_URL = "https://drive.google.com/uc?export=download&id=1jB-AkIpVZmX_BGDiW6j-mTUIluYlZqeo"
+TEMPLATE_DRIVE_URL = "https://drive.google.com/uc?export=download&id=16a4z69o0IGjmOZb_sP3HDG2m2WQnYxJI"
 
 
 @st.cache_data
