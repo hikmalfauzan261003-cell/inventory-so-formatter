@@ -28,7 +28,6 @@ st.divider()
 # ---------------------------------------------------------
 TEMPLATE_DRIVE_URL = "https://drive.google.com/uc?export=download&id=16a4z69o0IGjmOZb_sP3HDG2m2WQnYxJI"
 
-
 @st.cache_data
 def fetch_master_template():
     """Mengunduh template master dari Google Drive dan menyimpannya di cache Streamlit."""
