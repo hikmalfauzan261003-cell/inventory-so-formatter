@@ -19,7 +19,7 @@ with col6:
     st.image("member.jpeg", width = 200)
 st.write(
     "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga makanya saya bikin ini."
-
+)
 st.divider()
 
 # ---------------------------------------------------------
