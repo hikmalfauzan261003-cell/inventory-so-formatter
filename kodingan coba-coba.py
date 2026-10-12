@@ -8,15 +8,18 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Stock Opname Khusus SUki", page_icon="member.jpeg", layout="wide"
+    page_title="Stock Opname Khusus Suki", page_icon="📋", layout="wide"
 )
-col4, col5, col6 = st.columns ([1, 2, 1])
+
+# Header Suki
+col4, col5, col6 = st.columns([1, 2, 1])
 with col4:
-    st.image("member.jpeg", width = 200)
+    st.markdown("### 😹")
 with col5:
     st.title("Stock Opname Worksuki Generator")
 with col6:
-    st.image("member.jpeg", width = 200)
+    st.markdown("### 😹")
+
 st.write(
     "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga makanya saya bikin ini."
 )
@@ -28,20 +31,18 @@ st.divider()
 # ---------------------------------------------------------
 FILE_ID = "16a4z69o0IGjmOZb_sP3HDG2m2WQnYxJI"
 
-
 @st.cache_data
 def fetch_master_template():
     """Mengunduh template master dari Google Drive dengan penanganan konfirmasi virus scan."""
     URL = "https://docs.google.com/uc?export=download"
     session = requests.Session()
     response = session.get(URL, params={"id": FILE_ID}, stream=True)
-    
-    # Cek token konfirmasi jika file besar / kena virus warning Google Drive
+
     for key, value in response.cookies.items():
         if key.startswith("download_warning"):
             response = session.get(URL, params={"id": FILE_ID, "confirm": value}, stream=True)
             break
-            
+
     response.raise_for_status()
     return io.BytesIO(response.content)
 
@@ -150,10 +151,9 @@ for idx, row in enumerate(st.session_state.summary_rows):
 st.divider()
 
 # ---------------------------------------------------------
-# STEP 3: HELPER FUNCTIONS & EXEKUSI
+# STEP 3: HELPER FUNCTIONS & EKSEKUSI
 # ---------------------------------------------------------
 st.header("3. Eksekusi & Pemrosesan")
-
 
 def normalize_batch(val):
     """
@@ -168,15 +168,11 @@ def normalize_batch(val):
 
     val_str = str(val).strip()
 
-    # Potong desimal .0 di akhir jika ada
     if val_str.endswith(".0"):
         val_str = val_str[:-2]
 
-    # Hapus seluruh whitespace & karakter khusus tersembunyi
     val_str = re.sub(r"\s+", "", val_str).upper()
-
     return val_str
-
 
 def load_raw_inventory_data(uploaded_file_obj):
     """Membaca file data mentah inventory, menangani CSV tersembunyi di Excel, & melakukan sorting A-Z."""
@@ -189,9 +185,7 @@ def load_raw_inventory_data(uploaded_file_obj):
             if df.shape[1] <= 2:
                 uploaded_file_obj.seek(0)
                 df_temp = pd.read_excel(uploaded_file_obj)
-                non_null_series = df_temp.dropna(how="all").iloc[:, 0].astype(
-                    str
-                )
+                non_null_series = df_temp.dropna(how="all").iloc[:, 0].astype(str)
                 text_data = "\n".join(non_null_series)
                 df = pd.read_csv(
                     io.StringIO(text_data),
@@ -239,12 +233,8 @@ def load_raw_inventory_data(uploaded_file_obj):
 
     return df
 
-
 def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
-    """
-    Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi
-    yang terdaftar pada Form Dinamis Sheet Summary.
-    """
+    """Mengekstrak Batch MISSING yang HANYA SESUAI dengan kode lokasi terdaftar."""
     if not missing_file_obj:
         return set()
 
@@ -282,7 +272,6 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
                 str(c).strip().upper() for c in df_sheet.columns
             ]
 
-            # Filter lokasi spesifik
             if valid_locations and "LOCATION" in df_sheet.columns:
                 loc_pattern = "|".join(
                     [rf"\b{re.escape(loc)}\b" for loc in valid_locations]
@@ -318,7 +307,6 @@ def extract_missing_batch_set(missing_file_obj, target_loc_list=None):
 
     return missing_batches
 
-
 def get_val(row, *possible_keys, default=None):
     """Mencari nilai kolom secara case-insensitive & aman dari NaN."""
     for key in possible_keys:
@@ -327,7 +315,6 @@ def get_val(row, *possible_keys, default=None):
             val = row[k_upper]
             return val
     return default
-
 
 def set_cell_safe(ws, row, col, value):
     """Mengisi sel tanpa merusak jika menimpa MergedCell."""
@@ -342,9 +329,8 @@ def set_cell_safe(ws, row, col, value):
     else:
         cell.value = value
 
-
 def build_prev_so_dict(prev_so_file_obj):
-    """Pindai secara otomatis baris header & ekstraksi VLOOKUP Prev SO & Status secara presisi."""
+    """Pindai otomatis header & ekstraksi VLOOKUP Prev SO & Status secara presisi."""
     try:
         df_raw = pd.read_excel(
             prev_so_file_obj, sheet_name="Worksheet", header=None
@@ -396,9 +382,8 @@ def build_prev_so_dict(prev_so_file_obj):
                 }
     return prev_dict
 
-
 def write_so_table_to_sheet(ws, df_data, prev_so_map):
-    """Mengisi data ke sheet dari baris 8 ke bawah."""
+    """Mengisi data ke sheet dari baris 8 ke bawah dengan rumus yang bersih & aman dari corrupt."""
     max_r = ws.max_row
     if max_r >= 8:
         ws.delete_rows(8, amount=max_r - 7 + 1)
@@ -413,159 +398,93 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
 
         set_cell_safe(ws, row_idx, 1, idx + 1)  # A: No
         set_cell_safe(
-            ws,
-            row_idx,
-            2,
-            get_val(row_data, "COUNT NO", "COUNT_NO", default=""),
-        )  # B: Count No
+            ws, row_idx, 2, get_val(row_data, "COUNT NO", "COUNT_NO", default="")
+        )  # B
         set_cell_safe(
             ws, row_idx, 3, get_val(row_data, "LOCATION", "LOC", default="")
-        )  # C: LOC
-        set_cell_safe(ws, row_idx, 4, get_val(row_data, "BIN", default=""))  # D: BIN
+        )  # C
+        set_cell_safe(ws, row_idx, 4, get_val(row_data, "BIN", default=""))  # D
         set_cell_safe(
-            ws,
-            row_idx,
-            5,
-            get_val(row_data, "GRB", "GRB NO", "GRB_NO", default=""),
-        )  # E: GRB
-        set_cell_safe(ws, row_idx, 6, batch_num)  # F: Batch
+            ws, row_idx, 5, get_val(row_data, "GRB", "GRB NO", "GRB_NO", default="")
+        )  # E
+        set_cell_safe(ws, row_idx, 6, batch_num)  # F
         set_cell_safe(
-            ws,
-            row_idx,
-            7,
-            get_val(row_data, "PN", "PART NO", "PART_NO", default=""),
-        )  # G: PN
+            ws, row_idx, 7, get_val(row_data, "PN", "PART NO", "PART_NO", default="")
+        )  # G
         set_cell_safe(
-            ws,
-            row_idx,
-            8,
-            get_val(row_data, "SN", "SERIAL NO", "SERIAL_NO", default=""),
-        )  # H: SN
+            ws, row_idx, 8, get_val(row_data, "SN", "SERIAL NO", "SERIAL_NO", default="")
+        )  # H
         set_cell_safe(
             ws,
             row_idx,
             9,
-            get_val(
-                row_data,
-                "PN DESCRIPTION",
-                "DESCRIPTION",
-                "PN DESC",
-                default="",
-            ),
-        )  # I: PN Description
+            get_val(row_data, "PN DESCRIPTION", "DESCRIPTION", "PN DESC", default=""),
+        )  # I
 
         # QTY Columns (10-15)
         set_cell_safe(
-            ws,
-            row_idx,
-            10,
-            get_val(
-                row_data, "QTY AVAILABLE", "QTY_AVAIL", "QTY AVAIL", default=0
-            ),
-        )  # J: Available
+            ws, row_idx, 10, get_val(row_data, "QTY AVAILABLE", "QTY_AVAIL", "QTY AVAIL", default=0)
+        )
         set_cell_safe(
-            ws,
-            row_idx,
-            11,
-            get_val(
-                row_data, "QTY RESERVED", "QTY_RESV", "QTY RESV", default=0
-            ),
-        )  # K: Reserved
+            ws, row_idx, 11, get_val(row_data, "QTY RESERVED", "QTY_RESV", "QTY RESV", default=0)
+        )
         set_cell_safe(
-            ws,
-            row_idx,
-            12,
-            get_val(
-                row_data, "QTY IN TRANSFER", "QTY_TRANS", "QTY TRANS", default=0
-            ),
-        )  # L: Transfer
+            ws, row_idx, 12, get_val(row_data, "QTY IN TRANSFER", "QTY_TRANS", "QTY TRANS", default=0)
+        )
         set_cell_safe(
-            ws,
-            row_idx,
-            13,
-            get_val(
-                row_data,
-                "QTY PENDING RI",
-                "QTY PENDING R/I",
-                "QTY_PENDING",
-                default=0,
-            ),
-        )  # M: Pending RI
+            ws, row_idx, 13, get_val(row_data, "QTY PENDING RI", "QTY PENDING R/I", "QTY_PENDING", default=0)
+        )
         set_cell_safe(
             ws, row_idx, 14, get_val(row_data, "QTY US", "QTY_US", default=0)
-        )  # N: US
+        )
         set_cell_safe(
-            ws,
-            row_idx,
-            15,
-            get_val(
-                row_data, "QTY IN REPAIR", "QTY_REPAIR", "QTY REPAIR", default=0
-            ),
-        )  # O: In Repair
+            ws, row_idx, 15, get_val(row_data, "QTY IN REPAIR", "QTY_REPAIR", "QTY REPAIR", default=0)
+        )
 
         set_cell_safe(
             ws,
             row_idx,
             16,
-            get_val(
-                row_data,
-                "SHELF LIFE EXPIRATION",
-                "SHELF LIFE EXP",
-                "TOOL LIFE EXPIRATION",
-                default="",
-            ),
+            get_val(row_data, "SHELF LIFE EXPIRATION", "SHELF LIFE EXP", "TOOL LIFE EXPIRATION", default=""),
         )  # P
-        set_cell_safe(
-            ws, row_idx, 17, get_val(row_data, "CONDITION", default="SV")
-        )  # Q: Condition
-        set_cell_safe(
-            ws, row_idx, 18, get_val(row_data, "CATEGORY", default="")
-        )  # R: Category
-        set_cell_safe(
-            ws, row_idx, 19, get_val(row_data, "OWNER", default="")
-        )  # S: Owner
-        set_cell_safe(
-            ws, row_idx, 20, get_val(row_data, "UOM", default="EA")
-        )  # T: UOM
+        set_cell_safe(ws, row_idx, 17, get_val(row_data, "CONDITION", default="SV"))  # Q
+        set_cell_safe(ws, row_idx, 18, get_val(row_data, "CATEGORY", default=""))  # R
+        set_cell_safe(ws, row_idx, 19, get_val(row_data, "OWNER", default=""))  # S
+        set_cell_safe(ws, row_idx, 20, get_val(row_data, "UOM", default="EA"))  # T
 
-        # --- FORMULA EXCEL DINAMIS ---
-        set_cell_safe(
-            ws, row_idx, 21, f"=J{row_idx}+K{row_idx}+M{row_idx}+N{row_idx}"
-        )  # U: Qty eMRO
-        set_cell_safe(ws, row_idx, 22, None)  # V: Qty Actual (BLANK)
-        set_cell_safe(ws, row_idx, 23, f"=V{row_idx}-U{row_idx}")  # W: Diff
-        set_cell_safe(
-            ws,
-            row_idx,
-            24,
-            f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}=0,"NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
+        # --- FORMULA EXCEL AMAN & 100% MURNI SEPERTI KETIK MANUAL ---
+        ws.cell(row=row_idx, column=21, value=f"=SUM(J{row_idx}:N{row_idx})")  # U: Qty eMRO
+        ws.cell(row=row_idx, column=22, value=None)  # V: Qty Actual (Kosong polos)
+        ws.cell(row=row_idx, column=23, value=f'=IF(V{row_idx}="","",V{row_idx}-U{row_idx})')  # W: Diff
+        ws.cell(
+            row=row_idx,
+            column=24,
+            value=f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}="","NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
         )  # X: Result
-        set_cell_safe(
-            ws, row_idx, 25, f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")'
+        ws.cell(
+            row=row_idx,
+            column=25,
+            value=f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")',
         )  # Y: Status
 
-        # Kolom manual yang dikosongkan
-        set_cell_safe(ws, row_idx, 26, None)  # Z: Date
-        set_cell_safe(ws, row_idx, 27, None)  # AA: Auditor
-        set_cell_safe(ws, row_idx, 28, None)  # AB: Remark
-        set_cell_safe(ws, row_idx, 29, None)  # AC: Penyelesaian
-        set_cell_safe(ws, row_idx, 30, None)  # AD: Corrective Action
+        # Kolom manual dikosongkan
+        set_cell_safe(ws, row_idx, 26, None)  # Z
+        set_cell_safe(ws, row_idx, 27, None)  # AA
+        set_cell_safe(ws, row_idx, 28, None)  # AB
+        set_cell_safe(ws, row_idx, 29, None)  # AC
+        set_cell_safe(ws, row_idx, 30, None)  # AD
 
         # --- PREV SO & PREV STATUS (AE & AG) ---
         prev_info = prev_so_map.get(
             batch_num, {"prev_so": None, "prev_status": None}
         )
 
-        set_cell_safe(
-            ws, row_idx, 31, prev_info["prev_so"]
-        )  # AE (31): Prev SO
+        set_cell_safe(ws, row_idx, 31, prev_info["prev_so"])  # AE (31)
         set_cell_safe(
             ws, row_idx, 32, get_val(row_data, "CAT", "CATEGORY", default="")
-        )  # AF (32): CAT
-        set_cell_safe(
-            ws, row_idx, 33, prev_info["prev_status"]
-        )  # AG (33): Prev Status
-        set_cell_safe(ws, row_idx, 34, None)  # AH (34): Reason (Blank)
+        )  # AF (32)
+        set_cell_safe(ws, row_idx, 33, prev_info["prev_status"])  # AG (33)
+        set_cell_safe(ws, row_idx, 34, None)  # AH (34)
 
 
 if st.button("🚀 Process & Generate Template", type="primary"):
@@ -585,22 +504,18 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             df_raw = load_raw_inventory_data(csv_file)
             prev_so_map = build_prev_so_dict(prev_so_file)
 
-            # Ekstraksi LOC Code aktif dari Summary
             active_summary_locs = [
                 sdata["loc_code"] for sdata in summary_data_inputs
             ]
 
-            # Filter Batch Missing
             missing_batch_set = extract_missing_batch_set(
                 missing_file, target_loc_list=active_summary_locs
             )
 
-            # Hapus Sheet1 & Sheet2 jika ada
             for sname in ["Sheet1", "Sheet2", "sheet1", "sheet2"]:
                 if sname in wb.sheetnames:
                     del wb[sname]
 
-            # Filter Hapus Baris Missing
             initial_count = len(df_raw)
             if missing_batch_set:
 
@@ -617,7 +532,6 @@ if st.button("🚀 Process & Generate Template", type="primary"):
 
             deleted_missing_count = initial_count - len(df_raw)
 
-            # Filter NLA vs Regular
             nla_condition = pd.Series([False] * len(df_raw))
             for col_check in [
                 "STATUS",
@@ -638,9 +552,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             df_nla = df_raw[nla_condition].reset_index(drop=True)
             df_worksheet = df_raw[~nla_condition].reset_index(drop=True)
 
-            # -----------------------------------------------------
             # UPDATE SHEET WORKSHEET
-            # -----------------------------------------------------
             if "Worksheet" in wb.sheetnames:
                 ws = wb["Worksheet"]
                 set_cell_safe(ws, 3, 3, f" {station_input}")
@@ -648,30 +560,21 @@ if st.button("🚀 Process & Generate Template", type="primary"):
                 set_cell_safe(ws, 5, 3, f" {periode_input}")
                 write_so_table_to_sheet(ws, df_worksheet, prev_so_map)
 
-            # -----------------------------------------------------
             # UPDATE SHEET SUMMARY
-            # -----------------------------------------------------
             if "Summary" in wb.sheetnames:
                 ws_sum = wb["Summary"]
-                set_cell_safe(ws_sum, 3, 4, f": {station_input}")  # D3: Station
-                set_cell_safe(ws_sum, 4, 4, f": {periode_input}")  # D4: Periode
+                set_cell_safe(ws_sum, 3, 4, f": {station_input}")
+                set_cell_safe(ws_sum, 4, 4, f": {periode_input}")
 
                 start_sum_row = 11
                 for i, sdata in enumerate(summary_data_inputs):
                     r_curr = start_sum_row + i
-                    set_cell_safe(ws_sum, r_curr, 2, i + 1)  # B: NO
-                    set_cell_safe(
-                        ws_sum, r_curr, 3, sdata["division"]
-                    )  # C: DIVISION
-                    set_cell_safe(ws_sum, r_curr, 4, sdata["pic"])  # D: PIC
-                    set_cell_safe(
-                        ws_sum, r_curr, 5, sdata["loc_code"]
-                    )  # E: LOC CODE
-                    set_cell_safe(
-                        ws_sum, r_curr, 6, sdata["loc_desc"]
-                    )  # F: LOCATION DESCRIPTION
+                    set_cell_safe(ws_sum, r_curr, 2, i + 1)
+                    set_cell_safe(ws_sum, r_curr, 3, sdata["division"])
+                    set_cell_safe(ws_sum, r_curr, 4, sdata["pic"])
+                    set_cell_safe(ws_sum, r_curr, 5, sdata["loc_code"])
+                    set_cell_safe(ws_sum, r_curr, 6, sdata["loc_desc"])
 
-            # Save ke memory buffer untuk download
             output_buffer = io.BytesIO()
             wb.save(output_buffer)
             output_buffer.seek(0)
