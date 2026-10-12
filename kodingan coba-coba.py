@@ -398,11 +398,7 @@ def build_prev_so_dict(prev_so_file_obj):
 
 
 def write_so_table_to_sheet(ws, df_data, prev_so_map):
-    """Mengisi data ke sheet dari baris 8 ke bawah."""
-    max_r = ws.max_row
-    if max_r >= 8:
-        ws.delete_rows(8, amount=max_r - 7 + 1)
-
+    """Mengisi data ke sheet dari baris 8 ke bawah tanpa merusak Table Range & Formula Template."""
     for idx, row_data in df_data.iterrows():
         row_idx = 8 + idx
 
@@ -528,20 +524,19 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
             ws, row_idx, 20, get_val(row_data, "UOM", default="EA")
         )  # T: UOM
 
-        # --- FORMULA EXCEL DINAMIS ---
-        set_cell_safe(
-            ws, row_idx, 21, f"=J{row_idx}+K{row_idx}+M{row_idx}+N{row_idx}"
-        )  # U: Qty eMRO
-        set_cell_safe(ws, row_idx, 22, None)  # V: Qty Actual (BLANK)
-        set_cell_safe(ws, row_idx, 23, f"=V{row_idx}-U{row_idx}")  # W: Diff
-        set_cell_safe(
-            ws,
-            row_idx,
-            24,
-            f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}=0,"NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
+        # --- FORMULA EXCEL AMAN ---
+        ws.cell(row=row_idx, column=21, value=f"=J{row_idx}+K{row_idx}+M{row_idx}+N{row_idx}")  # U: Qty eMRO
+        ws.cell(row=row_idx, column=22, value=None)  # V: Qty Actual (BLANK)
+        ws.cell(row=row_idx, column=23, value=f'=IF(V{row_idx}="","",V{row_idx}-U{row_idx})')  # W: Diff
+        ws.cell(
+            row=row_idx,
+            column=24,
+            value=f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}="","NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
         )  # X: Result
-        set_cell_safe(
-            ws, row_idx, 25, f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")'
+        ws.cell(
+            row=row_idx,
+            column=25,
+            value=f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")',
         )  # Y: Status
 
         # Kolom manual yang dikosongkan
@@ -566,6 +561,19 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
             ws, row_idx, 33, prev_info["prev_status"]
         )  # AG (33): Prev Status
         set_cell_safe(ws, row_idx, 34, None)  # AH (34): Reason (Blank)
+
+    # Hapus sisa baris di bawah data aktual
+    total_rows_data = len(df_data)
+    last_row_needed = 7 + total_rows_data
+    if ws.max_row > last_row_needed:
+        ws.delete_rows(last_row_needed + 1, amount=ws.max_row - last_row_needed)
+
+    # Sinkronisasi Table Range agar Excel tidak corrupt dan Fill Handle aktif
+    if ws.tables:
+        for tname, table in ws.tables.items():
+            if tname == 'Table3':
+                end_col_letter = openpyxl.utils.get_column_letter(ws.max_column)
+                table.ref = f"A7:{end_col_letter}{max(8, last_row_needed)}"
 
 
 if st.button("🚀 Process & Generate Template", type="primary"):
