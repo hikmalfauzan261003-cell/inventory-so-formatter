@@ -8,21 +8,17 @@ import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Stock Opname Khusus Suki", page_icon="📋", layout="wide"
+    page_title="Stock Opname Khusus SUki", page_icon="member.jpeg", layout="wide"
 )
-
-# Header Suki
-col4, col5, col6 = st.columns([1, 2, 1])
+col4, col5, col6 = st.columns ([1, 2, 1])
 with col4:
-    st.markdown("### 😹")
+    st.image("member.jpeg", width = 200)
 with col5:
     st.title("Stock Opname Worksuki Generator")
 with col6:
-    st.markdown("### 😹")
-
+    st.image("member.jpeg", width = 200)
 st.write(
     "Halo Para Suki dan Member, Anda malas bikin worksheet? Sama saya juga makanya saya bikin ini."
-)
 
 st.divider()
 
