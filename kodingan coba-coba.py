@@ -398,7 +398,7 @@ def build_prev_so_dict(prev_so_file_obj):
 
 
 def write_so_table_to_sheet(ws, df_data, prev_so_map):
-    """Mengisi data ke sheet dari baris 8 ke bawah."""
+    """Mengisi data ke sheet dari baris 8 ke bawah (Rumus dipulihkan aman tanpa corrupt)."""
     max_r = ws.max_row
     if max_r >= 8:
         ws.delete_rows(8, amount=max_r - 7 + 1)
@@ -528,20 +528,19 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
             ws, row_idx, 20, get_val(row_data, "UOM", default="EA")
         )  # T: UOM
 
-        # --- FORMULA EXCEL DINAMIS ---
-        set_cell_safe(
-            ws, row_idx, 21, f"=J{row_idx}+K{row_idx}+M{row_idx}+N{row_idx}"
-        )  # U: Qty eMRO
+        # --- FORMULA EXCEL DINAMIS (DIPERBAIKI STRUKTUR PARSER-NYA) ---
+        ws.cell(row=row_idx, column=21, value=f"=J{row_idx}+K{row_idx}+M{row_idx}+N{row_idx}")  # U: Qty eMRO
         set_cell_safe(ws, row_idx, 22, None)  # V: Qty Actual (BLANK)
-        set_cell_safe(ws, row_idx, 23, f"=V{row_idx}-U{row_idx}")  # W: Diff
-        set_cell_safe(
-            ws,
-            row_idx,
-            24,
-            f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}=0,"NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
+        ws.cell(row=row_idx, column=23, value=f"=V{row_idx}-U{row_idx}")  # W: Diff
+        ws.cell(
+            row=row_idx,
+            column=24,
+            value=f'=IF(U{row_idx}=0,"BUG EMRO??/MISSING??",IF(V{row_idx}=0,"NOT FOUND",IF(V{row_idx}>U{row_idx},"SURPLUS",IF(V{row_idx}<U{row_idx},"MINUS","MATCHED"))))',
         )  # X: Result
-        set_cell_safe(
-            ws, row_idx, 25, f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")'
+        ws.cell(
+            row=row_idx,
+            column=25,
+            value=f'=IF(X{row_idx}="MATCHED","MATCHED","OPEN")',
         )  # Y: Status
 
         # Kolom manual yang dikosongkan
