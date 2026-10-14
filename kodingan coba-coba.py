@@ -159,6 +159,15 @@ st.divider()
 # ---------------------------------------------------------
 st.header("3. Eksekusi & Pemrosesan")
 
+# ---------------------------------------------------------
+# SAKLAR FITUR TAMBAHAN (ubah True / False kalau perlu diuji)
+# ---------------------------------------------------------
+# True  = logo header cetak dikembalikan ke file hasil (openpyxl biasanya membuangnya)
+RESTORE_HEADER_LOGO = True
+# True  = PivotTable di-refresh otomatis saat file dibuka di Excel
+#         (False = pivot tetap data lama sampai kamu klik Data > Refresh All)
+REFRESH_PIVOT_ON_OPEN = False
+
 # Karakter kontrol yang ilegal di XML (penyebab file Excel corrupt)
 ILLEGAL_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -674,6 +683,8 @@ def restore_header_logo(template_bytes, output_bytes):
     openpyxl membuang gambar (logo) di header cetak. Fungsi ini mengembalikannya
     dengan menyalin bagian header-drawing dari template ke file hasil.
     Kalau ada yang gagal / hasilnya tidak valid, file hasil asli dikembalikan apa adanya.
+    Mengembalikan (bytes_file, status). status = "OK" kalau logo berhasil dipulihkan,
+    selain itu berisi alasan kenapa tidak.
     """
     NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -785,7 +796,7 @@ def restore_header_logo(template_bytes, output_bytes):
             overrides[o_path] = o_xml
 
         if n == 0:
-            return output_bytes
+            return output_bytes, "Template tidak punya logo header (cek file template di Google Drive)"
 
         overrides["[Content_Types].xml"] = content_types
 
@@ -804,11 +815,11 @@ def restore_header_logo(template_bytes, output_bytes):
 
         # Validasi: zip utuh & masih bisa dibuka openpyxl
         if zipfile.ZipFile(io.BytesIO(result)).testzip() is not None:
-            return output_bytes
+            return output_bytes, "hasil pemulihan tidak lolos validasi zip"
         openpyxl.load_workbook(io.BytesIO(result), read_only=True).close()
-        return result
-    except Exception:
-        return output_bytes
+        return result, "OK"
+    except Exception as e:
+        return output_bytes, f"{type(e).__name__}: {e}"
 
 
 if st.button("🚀 Process & Generate Template", type="primary"):
@@ -915,8 +926,9 @@ if st.button("🚀 Process & Generate Template", type="primary"):
                         ws_sum, r_curr, 6, sdata["loc_desc"]
                     )  # F: LOCATION DESCRIPTION
 
-            # PivotTable di-refresh otomatis saat file dibuka di Excel
-            refresh_pivots_on_open(wb)
+            # PivotTable di-refresh otomatis saat file dibuka di Excel (opsional)
+            if REFRESH_PIVOT_ON_OPEN:
+                refresh_pivots_on_open(wb)
             wb.calculation.fullCalcOnLoad = True
 
             # Save ke memory buffer untuk download
@@ -924,12 +936,22 @@ if st.button("🚀 Process & Generate Template", type="primary"):
             wb.save(output_buffer)
 
             # Kembalikan logo header cetak yang dibuang openpyxl
-            output_buffer = io.BytesIO(
-                restore_header_logo(template_raw, output_buffer.getvalue())
-            )
+            if RESTORE_HEADER_LOGO:
+                logo_bytes, logo_status = restore_header_logo(
+                    template_raw, output_buffer.getvalue()
+                )
+            else:
+                logo_bytes, logo_status = output_buffer.getvalue(), "DIMATIKAN"
+            output_buffer = io.BytesIO(logo_bytes)
             output_buffer.seek(0)
 
             st.success("Worksheet Berhasil Dihitamkan 😹")
+            if logo_status == "OK":
+                st.caption("🖼️ Logo header berhasil dipulihkan.")
+            elif logo_status == "DIMATIKAN":
+                st.caption("🖼️ Pemulihan logo header sedang dimatikan (RESTORE_HEADER_LOGO = False).")
+            else:
+                st.warning(f"🖼️ Logo header tidak bisa dipulihkan: {logo_status}")
             if deleted_missing_count > 0:
                 st.info(
                     f"🗑️ Sebanyak **{deleted_missing_count}** baris barang berstatus **MISSING** terdampak Ragnamok 😹🙏"
