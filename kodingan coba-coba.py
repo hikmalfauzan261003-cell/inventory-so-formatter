@@ -1,8 +1,6 @@
 import csv
 import io
-import posixpath
 import re
-import zipfile
 from copy import copy
 
 import openpyxl
@@ -159,6 +157,15 @@ st.divider()
 # ---------------------------------------------------------
 st.header("3. Eksekusi & Pemrosesan")
 
+# ---------------------------------------------------------
+# SAKLAR FITUR TAMBAHAN (ubah True / False kalau perlu diuji)
+# ---------------------------------------------------------
+# Penanda versi kode (tampil setelah proses selesai, untuk memastikan server memakai kode terbaru)
+APP_VERSION = "v7 - 14 Okt 2026 (tanpa pemulihan logo)"
+# True  = PivotTable di-refresh otomatis saat file dibuka di Excel
+#         (False = pivot tetap data lama sampai kamu klik Data > Refresh All)
+REFRESH_PIVOT_ON_OPEN = False
+
 # Karakter kontrol yang ilegal di XML (penyebab file Excel corrupt)
 ILLEGAL_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -182,6 +189,7 @@ HEADER_TO_FIELD = {
     "QTY RESERVED": "qty_resv", "QTY IN TRANSFER": "qty_trans",
     "QTY PENDING R/I": "qty_pending", "QTY US": "qty_us",
     "QTY IN REPAIR": "qty_repair", "SHELF LIFE EXP": "shelf",
+    "TOOL LIFE EXP": "tool_life",
     "CONDITION": "condition", "CATEGORY": "category", "OWNER": "owner",
     "UOM": "uom", "QTY EMRO": "emro", "QTY ACTUAL": "actual",
     "DIFF": "diff", "RESULT": "result", "STATUS": "status",
@@ -490,11 +498,24 @@ def build_column_map(ws):
 
 
 def get_main_table(ws):
-    """Mengambil Excel Table di sheet Worksheet (Table3, atau Table pertama)."""
-    if not ws.tables:
+    """
+    Mengambil OBJEK Excel Table di sheet Worksheet (Table3, atau Table pertama).
+    Sengaja memakai dict.values() karena TableList milik openpyxl meng-override
+    items() sehingga mengembalikan teks (nama, ref), bukan objek Table.
+    """
+    try:
+        candidates = list(dict.values(ws.tables))
+    except Exception:
+        candidates = []
+    tables = [
+        t for t in candidates if not isinstance(t, str) and hasattr(t, "ref")
+    ]
+    if not tables:
         return None
-    name = "Table3" if "Table3" in ws.tables else list(ws.tables.keys())[0]
-    return ws.tables[name]
+    for t in tables:
+        if getattr(t, "name", None) == "Table3":
+            return t
+    return tables[0]
 
 
 def write_so_table_to_sheet(ws, df_data, prev_so_map):
@@ -502,10 +523,20 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
     cols = build_column_map(ws)
     table = get_main_table(ws)
 
+    # Kolom header paling kanan di baris 7 (supaya gaya baris ikut sampai kolom terakhir)
+    last_header_col = max(
+        (
+            c
+            for c in range(1, ws.max_column + 1)
+            if ws.cell(row=HEADER_ROW, column=c).value is not None
+        ),
+        default=0,
+    )
+
     if table is not None:
         min_c, _min_r, max_c, _max_r = range_boundaries(table.ref)
     else:
-        min_c, max_c = 1, max(cols.values())
+        min_c, max_c = 1, max(max(cols.values()), last_header_col)
 
     # Simpan gaya (border, format angka, dll) baris contoh (baris 8) untuk dipakai ulang
     row_styles = {
@@ -580,15 +611,17 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
             get_val(row_data, "QTY IN REPAIR", "QTY_REPAIR", "QTY REPAIR", default=0),
         )
 
-        put(
-            "shelf",
-            get_val(
-                row_data,
-                "SHELF LIFE EXPIRATION",
-                "SHELF LIFE EXP",
-                "TOOL LIFE EXPIRATION",
-            ),
+        # Template baru punya kolom Tool Life Exp terpisah; template lama menggabungnya di Shelf Life
+        has_tool_col = "tool_life" in cols
+        shelf_keys = ("SHELF LIFE EXPIRATION", "SHELF LIFE EXP") + (
+            () if has_tool_col else ("TOOL LIFE EXPIRATION", "TOOL LIFE EXP")
         )
+        put("shelf", get_val(row_data, *shelf_keys))
+        if has_tool_col:
+            put(
+                "tool_life",
+                get_val(row_data, "TOOL LIFE EXPIRATION", "TOOL LIFE EXP"),
+            )
         put("condition", get_val(row_data, "CONDITION", default="SV"))
         put("category", get_val(row_data, "CATEGORY"))
         put("owner", get_val(row_data, "OWNER"))
@@ -630,13 +663,50 @@ def write_so_table_to_sheet(ws, df_data, prev_so_map):
         put("prev_status", prev_info["prev_status"])
         put("cat", get_val(row_data, "CAT", "CATEGORY"))
 
+    # --- Template tanpa Table: panjangkan filter (autoFilter) sampai baris data terakhir ---
+    if table is None:
+        try:
+            af = ws.auto_filter
+            if af is not None and af.ref:
+                a_min_c, _a_r, a_max_c, _a_r2 = range_boundaries(af.ref)
+                last_row = FIRST_DATA_ROW + max(len(df_data), 1) - 1
+                af.ref = f"{get_column_letter(a_min_c)}{HEADER_ROW}:{get_column_letter(a_max_c)}{last_row}"
+        except Exception:
+            pass
+
     # --- Sesuaikan ukuran Table dengan jumlah data (supaya rumus/pivot/drag ikut) ---
     if table is not None:
         last_row = FIRST_DATA_ROW + max(len(df_data), 1) - 1
         new_ref = f"{get_column_letter(min_c)}{HEADER_ROW}:{get_column_letter(max_c)}{last_row}"
-        table.ref = new_ref
-        if table.autoFilter is not None:
-            table.autoFilter.ref = new_ref
+        try:
+            table.ref = new_ref
+            auto_filter = getattr(table, "autoFilter", None)
+            if auto_filter is not None and not isinstance(auto_filter, str):
+                auto_filter.ref = new_ref
+        except Exception as e:
+            st.warning(
+                f"Ukuran Table tidak bisa disesuaikan otomatis ({e}). "
+                "Data tetap terisi, tapi Table mungkin perlu di-resize manual di Excel."
+            )
+
+
+def remove_header_image_placeholders(wb):
+    """
+    openpyxl tidak bisa menyimpan GAMBAR di header/footer (logo), tapi penanda gambarnya (&G)
+    tetap tertinggal. Penanda itu dibuang supaya tidak menunjuk ke gambar yang sudah tidak ada.
+    Teks header/footer lainnya (mis. "Page &P of &N") tidak diubah.
+    """
+    for ws_h in wb.worksheets:
+        hf = ws_h.HeaderFooter
+        for part in ("oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter"):
+            item = getattr(hf, part, None)
+            if item is None:
+                continue
+            for side in ("left", "center", "right"):
+                section = getattr(item, side, None)
+                if section is not None and section.text and "&G" in section.text:
+                    new_text = section.text.replace("&G", "").strip()
+                    section.text = new_text if new_text else None
 
 
 def refresh_pivots_on_open(wb):
@@ -649,146 +719,8 @@ def refresh_pivots_on_open(wb):
                 pass
 
 
-def restore_header_logo(template_bytes, output_bytes):
-    """
-    openpyxl membuang gambar (logo) di header cetak. Fungsi ini mengembalikannya
-    dengan menyalin bagian header-drawing dari template ke file hasil.
-    Kalau ada yang gagal / hasilnya tidak valid, file hasil asli dikembalikan apa adanya.
-    """
-    NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-    NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-    PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
-    VML_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing"
-    try:
-        from xml.etree import ElementTree as ET
 
-        zt = zipfile.ZipFile(io.BytesIO(template_bytes))
-        zo = zipfile.ZipFile(io.BytesIO(output_bytes))
 
-        def resolve(base_dir, target):
-            if target.startswith("/"):
-                return target.lstrip("/")
-            return posixpath.normpath(posixpath.join(base_dir, target))
-
-        def sheet_paths(z):
-            wbx = ET.fromstring(z.read("xl/workbook.xml"))
-            rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
-            rid_target = {r.get("Id"): r.get("Target") for r in rels}
-            out = {}
-            for s in wbx.find(f"{{{NS_MAIN}}}sheets"):
-                tgt = rid_target[s.get(f"{{{NS_REL}}}id")]
-                out[s.get("name")] = resolve("xl", tgt)
-            return out
-
-        def rels_path(part_path):
-            d, f = posixpath.split(part_path)
-            return posixpath.join(d, "_rels", f + ".rels")
-
-        t_sheets, o_sheets = sheet_paths(zt), sheet_paths(zo)
-        names_in_zip = set(zo.namelist())
-        overrides, additions = {}, {}
-        content_types = zo.read("[Content_Types].xml").decode("utf-8")
-        n = 0
-
-        for sheet_name, t_path in t_sheets.items():
-            t_xml = zt.read(t_path).decode("utf-8")
-            m = re.search(r'<legacyDrawingHF\s+r:id="([^"]+)"', t_xml)
-            if not m or sheet_name not in o_sheets:
-                continue
-            o_path = o_sheets[sheet_name]
-            o_xml = overrides.get(o_path, zo.read(o_path).decode("utf-8"))
-            if "legacyDrawingHF" in o_xml:
-                continue
-
-            # Cari file VML header di template
-            t_rels = ET.fromstring(zt.read(rels_path(t_path)))
-            vml_target = next(
-                r.get("Target") for r in t_rels if r.get("Id") == m.group(1)
-            )
-            vml_path = resolve(posixpath.dirname(t_path), vml_target)
-            vml_rels_path = rels_path(vml_path)
-
-            n += 1
-            new_vml = f"xl/drawings/hfDrawing{n}.vml"
-            additions[new_vml] = zt.read(vml_path)
-
-            # Salin gambar yang dipakai VML + buat rels baru
-            if vml_rels_path in zt.namelist():
-                v_rels = ET.fromstring(zt.read(vml_rels_path))
-                new_rel_xml = [f'<Relationships xmlns="{PKG_REL}">']
-                for r in v_rels:
-                    img_src = resolve(posixpath.dirname(vml_path), r.get("Target"))
-                    ext = posixpath.splitext(img_src)[1].lower().lstrip(".")
-                    img_new = f"xl/media/hf_logo{n}_{posixpath.basename(img_src)}"
-                    if img_new in names_in_zip:
-                        raise ValueError("nama gambar bentrok")
-                    additions[img_new] = zt.read(img_src)
-                    new_rel_xml.append(
-                        f'<Relationship Id="{r.get("Id")}" Type="{r.get("Type")}" '
-                        f'Target="/{img_new}"/>'
-                    )
-                    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif"}.get(ext)
-                    if mime and f'Extension="{ext}"' not in content_types:
-                        content_types = content_types.replace(
-                            "</Types>",
-                            f'<Default Extension="{ext}" ContentType="{mime}"/></Types>',
-                        )
-                new_rel_xml.append("</Relationships>")
-                additions[rels_path(new_vml)] = "".join(new_rel_xml).encode("utf-8")
-
-            if 'Extension="vml"' not in content_types:
-                content_types = content_types.replace(
-                    "</Types>",
-                    '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/></Types>',
-                )
-
-            # Hubungkan VML ke sheet hasil
-            o_rels_path = rels_path(o_path)
-            rid = f"rIdHF{n}"
-            if o_rels_path in names_in_zip or o_rels_path in overrides:
-                o_rels_xml = overrides.get(o_rels_path) or zo.read(o_rels_path).decode("utf-8")
-            else:
-                o_rels_xml = f'<Relationships xmlns="{PKG_REL}"></Relationships>'
-            o_rels_xml = o_rels_xml.replace(
-                "</Relationships>",
-                f'<Relationship Id="{rid}" Type="{VML_TYPE}" Target="/{new_vml}"/></Relationships>',
-            )
-            overrides[o_rels_path] = o_rels_xml
-
-            # Sisipkan <legacyDrawingHF> sebelum tableParts / extLst / akhir worksheet
-            tag = f'<legacyDrawingHF xmlns:r="{NS_REL}" r:id="{rid}"/>'
-            for marker in ("<tableParts", "<extLst", "</worksheet>"):
-                pos = o_xml.find(marker)
-                if pos != -1:
-                    o_xml = o_xml[:pos] + tag + o_xml[pos:]
-                    break
-            overrides[o_path] = o_xml
-
-        if n == 0:
-            return output_bytes
-
-        overrides["[Content_Types].xml"] = content_types
-
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
-            for item in zo.infolist():
-                data = overrides.get(item.filename)
-                if data is None:
-                    data = zo.read(item.filename)
-                elif isinstance(data, str):
-                    data = data.encode("utf-8")
-                zout.writestr(item.filename, data)
-            for name, data in additions.items():
-                zout.writestr(name, data)
-        result = buf.getvalue()
-
-        # Validasi: zip utuh & masih bisa dibuka openpyxl
-        if zipfile.ZipFile(io.BytesIO(result)).testzip() is not None:
-            return output_bytes
-        openpyxl.load_workbook(io.BytesIO(result), read_only=True).close()
-        return result
-    except Exception:
-        return output_bytes
 
 
 if st.button("🚀 Process & Generate Template", type="primary"):
@@ -798,8 +730,7 @@ if st.button("🚀 Process & Generate Template", type="primary"):
         with st.spinner("Suki tidur besok SO lagi sama member 😹"):
             try:
                 template_bytes = fetch_master_template()
-                template_raw = template_bytes.getvalue()
-                wb = openpyxl.load_workbook(io.BytesIO(template_raw))
+                wb = openpyxl.load_workbook(io.BytesIO(template_bytes.getvalue()))
             except Exception as e:
                 st.error(
                     f"❌ Gagal mengambil Template Master dari Google Drive: {e}"
@@ -895,21 +826,19 @@ if st.button("🚀 Process & Generate Template", type="primary"):
                         ws_sum, r_curr, 6, sdata["loc_desc"]
                     )  # F: LOCATION DESCRIPTION
 
-            # PivotTable di-refresh otomatis saat file dibuka di Excel
-            refresh_pivots_on_open(wb)
+            # PivotTable di-refresh otomatis saat file dibuka di Excel (opsional)
+            if REFRESH_PIVOT_ON_OPEN:
+                refresh_pivots_on_open(wb)
+            remove_header_image_placeholders(wb)
             wb.calculation.fullCalcOnLoad = True
 
             # Save ke memory buffer untuk download
             output_buffer = io.BytesIO()
             wb.save(output_buffer)
-
-            # Kembalikan logo header cetak yang dibuang openpyxl
-            output_buffer = io.BytesIO(
-                restore_header_logo(template_raw, output_buffer.getvalue())
-            )
             output_buffer.seek(0)
 
             st.success("Worksheet Berhasil Dihitamkan 😹")
+            st.caption(f"🧩 Versi kode: {APP_VERSION}")
             if deleted_missing_count > 0:
                 st.info(
                     f"🗑️ Sebanyak **{deleted_missing_count}** baris barang berstatus **MISSING** terdampak Ragnamok 😹🙏"
